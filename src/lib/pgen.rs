@@ -298,6 +298,62 @@ impl Itemset {
         }
         newis
     }
+
+    pub fn weakly_compatible(&self, other: &Itemset) -> bool {
+        // test if states have the same items
+        for (i, item_rc) in self.items.iter().enumerate() {
+            let item_opt = item_rc.borrow();
+            let other_opt = other.items[i].borrow();
+            if item_opt.is_none() && other_opt.is_none() { continue; }
+            if item_opt.is_none() != other_opt.is_none() { return false; }
+            let item_la = &item_opt.as_ref().unwrap().lookaheads;
+            let other_la = &other_opt.as_ref().unwrap().lookaheads;
+            for k in 0..item_la.len() {
+                if item_la[k].borrow().is_none() != other_la[k].borrow().is_none() {
+                    return false;
+                }
+            }
+        }
+
+        // weakly test
+        for (i, item_rc) in self.items.iter().enumerate() {
+            let item_opt = item_rc.borrow();
+            if item_opt.is_none() { continue; }
+            for (j, other_rc) in self.items.iter().enumerate().skip(i) {
+                let other_opt = other_rc.borrow();
+                if other_opt.is_none() { continue; }
+                let item_la = &item_opt.as_ref().unwrap().lookaheads;
+                let other_la = &other_opt.as_ref().unwrap().lookaheads;
+                for k in 0..item_la.len() {
+                    let ik_rc = item_la[k].borrow();
+                    let ok_rc = other_la[k].borrow();
+                    if ik_rc.is_none() { continue; }
+                    let ik = ik_rc.as_ref().unwrap();
+                    let ok = ok_rc.as_ref().unwrap();
+                    for l in k..other_la.len() {
+                        let il_rc = item_la[l].borrow();
+                        let ol_rc = other_la[l].borrow();
+                        if il_rc.is_none() { continue; }
+                        let ol = ol_rc.as_ref().unwrap();
+                        let il = il_rc.as_ref().unwrap();
+                        if !bitvec_intersect(ik, ol) && !bitvec_intersect(il, ok) {
+                            return true;
+                        }
+                        if bitvec_intersect(ik, il) { return true; }
+                        if bitvec_intersect(ok, ol) { return true; }
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
+pub fn bitvec_intersect(vec: &BitVec, other: &BitVec) -> bool {
+    for (i, bit) in vec.iter().enumerate() {
+        if bit == other[i] { return true; }
+    }
+    false
 }
 
 pub struct StateGraph {
@@ -363,7 +419,8 @@ impl StateGraph {
                         }
                         nstate = state.goto(&grm, &firsts, sym.clone());
                     }
-                    let j = states.iter().position(|x| x == &nstate);
+                    //let j = states.iter().position(|x| x == &nstate);
+                    let j = states.iter().position(|x| x.weakly_compatible(&nstate));
                     match j {
                         Some(k) => { edges.insert((state_i, sym.clone()), k); },
                         None    => {
@@ -375,6 +432,7 @@ impl StateGraph {
             }
             state_i += 1;
         }
+        println!("Total: {}", states.len());
         StateGraph{states: states, edges: edges}
     }
 }
