@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::cell::RefCell;
 
 extern crate bit_vec;
@@ -347,6 +347,29 @@ impl Itemset {
         }
         false
     }
+
+    pub fn merge_lookaheads(&self, other: &Itemset) -> bool {
+        let mut changed = false;
+        for (i, item_rc) in self.items.iter().enumerate() {
+            let item_opt = item_rc.borrow();
+            let other_opt = other.items[i].borrow();
+            if item_opt.is_none() && other_opt.is_none() { continue; }
+            if item_opt.is_none() != other_opt.is_none() { panic!("Itemset must be equal to merge their lookaheads!"); }
+            let item_la = &item_opt.as_ref().unwrap().lookaheads;
+            let other_la = &other_opt.as_ref().unwrap().lookaheads;
+            for k in 0..item_la.len() {
+                let mut ik = item_la[k].borrow_mut();
+                if ik.is_none() {
+                    continue;
+                }
+                let ok = other_la[k].borrow();
+                if ik.as_mut().unwrap().union(&ok.as_ref().unwrap()) {
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
 }
 
 pub fn bitvec_intersect(vec: &BitVec, other: &BitVec) -> bool {
@@ -378,8 +401,16 @@ impl StateGraph {
 
         let mut seen_nonterms = BitVec::from_elem(grm.nonterms_len, false);
         let mut seen_terms = BitVec::from_elem(grm.terms_len, false);
-        let mut state_i = 0; // How far through states have we processed so far?
-        while state_i < states.len() {
+
+        let mut todo = HashSet::new();
+        todo.insert(0);
+        while !todo.is_empty() {
+            let mut state_i = 0;
+            for x in &todo {
+                state_i = x.clone();
+                break;
+            }
+            todo.remove(&state_i);
             // We maintain two lists of which nonterms and terms we've seen; when processing a
             // given state there's no point processing any given nonterm or term more than once.
             seen_nonterms.clear();
@@ -422,15 +453,20 @@ impl StateGraph {
                     //let j = states.iter().position(|x| x == &nstate);
                     let j = states.iter().position(|x| x.weakly_compatible(&nstate));
                     match j {
-                        Some(k) => { edges.insert((state_i, sym.clone()), k); },
+                        Some(k) => {
+                            edges.insert((state_i, sym.clone()), k);
+                            if states[k].merge_lookaheads(&nstate) {
+                                todo.insert(k);
+                            }
+                        },
                         None    => {
                             edges.insert((state_i, sym.clone()), states.len());
                             states.push(nstate);
+                            todo.insert(states.len()-1);
                         }
                     }
                 }
             }
-            state_i += 1;
         }
         println!("Total: {}", states.len());
         StateGraph{states: states, edges: edges}
