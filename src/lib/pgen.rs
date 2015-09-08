@@ -351,7 +351,7 @@ impl Itemset {
 
 pub fn bitvec_intersect(vec: &BitVec, other: &BitVec) -> bool {
     for (i, bit) in vec.iter().enumerate() {
-        if bit == other[i] { return true; }
+        if bit && other[i] { return true; }
     }
     false
 }
