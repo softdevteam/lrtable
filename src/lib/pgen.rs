@@ -40,19 +40,31 @@ pub struct Firsts {
     // Where "111" is for the nonterminal S, and 101 for A.
     alt_firsts: Vec<BitVec>,
     alt_epsilons: BitVec,
+    alt_sym_lookaheads: Vec<Vec<SymLookahead>>,
     terms_len: NIdx
+}
+
+#[derive(Debug)]
+struct SymLookahead {
+    lookaheads: BitVec,
+    nullable: bool
 }
 
 impl Firsts {
     /// Generates and returns the firsts set for the given grammar.
     pub fn new(grm: &Grammar) -> Firsts {
         let mut alt_firsts = Vec::with_capacity(grm.nonterms_len);
+        let mut alt_sym_lookaheads = Vec::with_capacity(grm.nonterms_len);
         for _ in 0..grm.nonterms_len {
             alt_firsts.push(BitVec::from_elem(grm.terms_len, false));
+        }
+        for alt in grm.alts.iter() {
+            alt_sym_lookaheads.push(Vec::with_capacity(alt.len()));
         }
         let mut firsts = Firsts {
             alt_firsts  : alt_firsts,
             alt_epsilons: BitVec::from_elem(grm.nonterms_len, false),
+            alt_sym_lookaheads: alt_sym_lookaheads,
             terms_len   : grm.terms_len
         };
 
@@ -117,8 +129,36 @@ impl Firsts {
                     }
                 }
             }
-            if !changed { return firsts; }
+            if !changed { break; }
         }
+
+        for (i, alt) in grm.alts.iter().enumerate() {
+            for (j, _) in alt.iter().enumerate() {
+                let mut nullable = false;
+                let mut la = BitVec::from_elem(grm.terms_len, false);
+                for sym in alt.iter().skip(j + 1) {
+                    match sym {
+                        &Symbol::Terminal(term_i) => {
+                            la.set(term_i, true);
+                            nullable = true;
+                            break;
+                        },
+                        &Symbol::Nonterminal(nonterm_i) => {
+                            la.union(firsts.alt_firsts(nonterm_i));
+                            if !firsts.is_epsilon_set(nonterm_i) {
+                                nullable = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                firsts.alt_sym_lookaheads[i].push(SymLookahead{
+                                                      lookaheads: la,
+                                                      nullable: nullable});
+            }
+        }
+
+        firsts
     }
 
     /// Returns true if the terminal `tidx` is in the first set for nonterminal `nidx` is set.
@@ -223,7 +263,7 @@ impl Itemset {
 
     /// Close over this Itemset.
     pub fn close(&self, grm: &Grammar, firsts: &Firsts) {
-        let mut new_la = BitVec::from_elem(grm.terms_len, false);
+        let mut la = BitVec::from_elem(grm.terms_len, false);
         loop {
             let mut changed = false;
             for (i, item_rc) in self.items.iter().enumerate() {
@@ -235,35 +275,27 @@ impl Itemset {
                         if item_opt.as_ref().unwrap().lookaheads[dot].borrow().is_none() { continue; }
                     }
                     if let Symbol::Nonterminal(nonterm_i) = alt[dot] {
-                        new_la.clear();
-                        let mut nullabled = false;
-                        for k in dot + 1..alt.len() {
-                            match alt[k] {
-                                Symbol::Terminal(term_j) => {
-                                    new_la.set(term_j, true);
-                                    nullabled = true;
-                                    break;
-                                },
-                                Symbol::Nonterminal(nonterm_j) => {
-                                    new_la.union(firsts.alt_firsts(nonterm_j));
-                                    if !firsts.is_epsilon_set(nonterm_j) {
-                                        nullabled = true;
-                                        break;
-                                    }
-                                }
-                            }
+                        let merge;
+                        let sla = &firsts.alt_sym_lookaheads[i][dot];
+                        if sla.nullable {
+                            merge = &sla.lookaheads;
                         }
-                        if !nullabled {
+                        else {
                             let item_opt = item_rc.borrow();
                             let la_opt = item_opt.as_ref().unwrap().lookaheads[dot].borrow();
-                            new_la.union(&la_opt.as_ref().unwrap());
+                            la.clear();
+                            la.union(&sla.lookaheads);
+                            la.union(la_opt.as_ref().unwrap());
+                            merge = &la;
                         }
-
                         for alt_i in grm.rules_alts[nonterm_i].iter() {
                             self.ensure_lookahead_allocd(&grm, &self, *alt_i, 0);
                             let clitem_opt = self.items[*alt_i].borrow_mut();
                             let mut clla_opt = clitem_opt.as_ref().unwrap().lookaheads[0].borrow_mut();
-                            if clla_opt.as_mut().unwrap().union(&new_la) { changed = true; }
+                            let mut clla_la = clla_opt.as_mut().unwrap();
+                            if clla_la.union(&merge) {
+                                changed = true;
+                            }
                         }
                     }
                 }
