@@ -319,7 +319,7 @@ impl Itemset {
         for (i, item_rc) in self.items.iter().enumerate() {
             let item_opt = item_rc.borrow();
             if item_opt.is_none() { continue; }
-            for (j, other_rc) in self.items.iter().enumerate().skip(i) {
+            for other_rc in self.items.iter().skip(i) {
                 let other_opt = other_rc.borrow();
                 if other_opt.is_none() { continue; }
                 let item_la = &item_opt.as_ref().unwrap().lookaheads;
@@ -354,7 +354,7 @@ impl Itemset {
             let item_opt = item_rc.borrow();
             let other_opt = other.items[i].borrow();
             if item_opt.is_none() && other_opt.is_none() { continue; }
-            if item_opt.is_none() != other_opt.is_none() { panic!("Itemset must be equal to merge their lookaheads!"); }
+            assert_eq!(item_opt.is_none(), other_opt.is_none());
             let item_la = &item_opt.as_ref().unwrap().lookaheads;
             let other_la = &other_opt.as_ref().unwrap().lookaheads;
             for k in 0..item_la.len() {
@@ -406,10 +406,7 @@ impl StateGraph {
         todo.insert(0);
         while !todo.is_empty() {
             let mut state_i = 0;
-            for x in &todo {
-                state_i = x.clone();
-                break;
-            }
+            for x in &todo { state_i = x.clone(); break; }
             todo.remove(&state_i);
             // We maintain two lists of which nonterms and terms we've seen; when processing a
             // given state there's no point processing any given nonterm or term more than once.
@@ -450,7 +447,6 @@ impl StateGraph {
                         }
                         nstate = state.goto(&grm, &firsts, sym.clone());
                     }
-                    //let j = states.iter().position(|x| x == &nstate);
                     let j = states.iter().position(|x| x.weakly_compatible(&nstate));
                     match j {
                         Some(k) => {
@@ -468,7 +464,6 @@ impl StateGraph {
                 }
             }
         }
-        println!("Total: {}", states.len());
         StateGraph{states: states, edges: edges}
     }
 }
