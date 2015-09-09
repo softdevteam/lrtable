@@ -403,3 +403,141 @@ fn test_stategraph() {
     state_exists(&grm, &sg.states[s9], "S", 0, 2, vec!["b", "c"]);
 }
 
+// Pager grammar
+fn grammar_pager() -> Grammar {
+    ast_to_grammar(&parse_yacc(&"
+        %start X
+        %%
+         X : 'a' Y 'd' | 'a' Z 'c' | 'a' T | 'b' Y 'e' | 'b' Z 'd' | 'b' T;
+         Y : 't' W | 'u' X;
+         Z : 't' 'u';
+         T : 'u' X 'a';
+         W : 'u' V;
+         V : ;
+      ".to_string()).unwrap())
+}
+
+#[test]
+fn test_pager_graph() {
+    let grm = grammar_pager();
+    let sg = StateGraph::new(&grm);
+
+    assert_eq!(sg.states.len(), 23);
+    assert_eq!(sg.edges.len(), 27);
+
+    // State 0
+    state_exists(&grm, &sg.states[0], "^", 0, 0, vec!["$"]);
+    state_exists(&grm, &sg.states[0], "X", 0, 0, vec!["$"]);
+    state_exists(&grm, &sg.states[0], "X", 1, 0, vec!["$"]);
+    state_exists(&grm, &sg.states[0], "X", 2, 0, vec!["$"]);
+    state_exists(&grm, &sg.states[0], "X", 3, 0, vec!["$"]);
+    state_exists(&grm, &sg.states[0], "X", 4, 0, vec!["$"]);
+    state_exists(&grm, &sg.states[0], "X", 5, 0, vec!["$"]);
+
+    let s1 = sg.edges[&(0, Symbol::Terminal(grm.terminal_off("a")))];
+    state_exists(&grm, &sg.states[s1], "X", 0, 1, vec!["a", "d", "e", "$"]);
+    state_exists(&grm, &sg.states[s1], "X", 1, 1, vec!["a", "d", "e", "$"]);
+    state_exists(&grm, &sg.states[s1], "X", 2, 1, vec!["a", "d", "e", "$"]);
+    state_exists(&grm, &sg.states[s1], "Y", 0, 0, vec!["d"]);
+    state_exists(&grm, &sg.states[s1], "Y", 1, 0, vec!["d"]);
+    state_exists(&grm, &sg.states[s1], "Z", 0, 0, vec!["c"]);
+    state_exists(&grm, &sg.states[s1], "T", 0, 0, vec!["a", "d", "e", "$"]);
+
+    let s7 = sg.edges[&(0, Symbol::Terminal(grm.terminal_off("b")))];
+    state_exists(&grm, &sg.states[s7], "X", 3, 1, vec!["a", "d", "e", "$"]);
+    state_exists(&grm, &sg.states[s7], "X", 4, 1, vec!["a", "d", "e", "$"]);
+    state_exists(&grm, &sg.states[s7], "X", 5, 1, vec!["a", "d", "e", "$"]);
+    state_exists(&grm, &sg.states[s7], "Y", 0, 0, vec!["e"]);
+    state_exists(&grm, &sg.states[s7], "Y", 1, 0, vec!["e"]);
+    state_exists(&grm, &sg.states[s7], "Z", 0, 0, vec!["d"]);
+    state_exists(&grm, &sg.states[s7], "T", 0, 0, vec!["a", "d", "e", "$"]);
+
+    let s4 = sg.edges[&(s1, Symbol::Terminal(grm.terminal_off("u")))];
+    assert_eq!(s4, sg.edges[&(s7, Symbol::Terminal(grm.terminal_off("u")))]);
+    state_exists(&grm, &sg.states[s4], "Y", 1, 1, vec!["d", "e"]);
+    state_exists(&grm, &sg.states[s4], "T", 0, 1, vec!["a", "d", "e", "$"]);
+    state_exists(&grm, &sg.states[s4], "X", 0, 0, vec!["d", "e", "a"]);
+    state_exists(&grm, &sg.states[s4], "X", 1, 0, vec!["d", "e", "a"]);
+    state_exists(&grm, &sg.states[s4], "X", 2, 0, vec!["d", "e", "a"]);
+    state_exists(&grm, &sg.states[s4], "X", 3, 0, vec!["d", "e", "a"]);
+    state_exists(&grm, &sg.states[s4], "X", 4, 0, vec!["d", "e", "a"]);
+    state_exists(&grm, &sg.states[s4], "X", 5, 0, vec!["d", "e", "a"]);
+
+    assert_eq!(s1, sg.edges[&(s4, Symbol::Terminal(grm.terminal_off("a")))]);
+    assert_eq!(s7, sg.edges[&(s4, Symbol::Terminal(grm.terminal_off("b")))]);
+
+    let s2 = sg.edges[&(s1, Symbol::Terminal(grm.terminal_off("t")))];
+    state_exists(&grm, &sg.states[s2], "Y", 0, 1, vec!["d"]);
+    state_exists(&grm, &sg.states[s2], "Z", 0, 1, vec!["c"]);
+    state_exists(&grm, &sg.states[s2], "W", 0, 0, vec!["d"]);
+
+    let s3 = sg.edges[&(s2, Symbol::Terminal(grm.terminal_off("u")))];
+    state_exists(&grm, &sg.states[s3], "Z", 0, 2, vec!["c"]);
+    state_exists(&grm, &sg.states[s3], "W", 0, 1, vec!["d"]);
+    state_exists(&grm, &sg.states[s3], "V", 0, 0, vec!["d"]);
+
+    let s5 = sg.edges[&(s4, Symbol::Nonterminal(grm.nonterminal_off("X")))];
+    state_exists(&grm, &sg.states[s5], "Y", 1, 2, vec!["d", "e"]);
+    state_exists(&grm, &sg.states[s5], "T", 0, 2, vec!["a", "d", "e", "$"]);
+
+    let s6 = sg.edges[&(s5, Symbol::Terminal(grm.terminal_off("a")))];
+    state_exists(&grm, &sg.states[s6], "T", 0, 3, vec!["a", "d", "e", "$"]);
+    
+    let s8 = sg.edges[&(s7, Symbol::Terminal(grm.terminal_off("t")))];
+    state_exists(&grm, &sg.states[s8], "Y", 0, 1, vec!["e"]);
+    state_exists(&grm, &sg.states[s8], "Z", 0, 1, vec!["d"]);
+    state_exists(&grm, &sg.states[s8], "W", 0, 0, vec!["e"]);
+
+    let s9 = sg.edges[&(s8, Symbol::Terminal(grm.terminal_off("u")))];
+    state_exists(&grm, &sg.states[s9], "Z", 0, 2, vec!["d"]);
+    state_exists(&grm, &sg.states[s9], "W", 0, 1, vec!["e"]);
+    state_exists(&grm, &sg.states[s9], "V", 0, 0, vec!["e"]);
+
+    // Ommitted successors from the graph in Fig.3
+    
+    // X-successor of S0
+    let s0X = sg.edges[&(0, Symbol::Nonterminal(grm.nonterminal_off("X")))];
+    state_exists(&grm, &sg.states[s0X], "^", 0, 1, vec!["$"]);
+
+    // Y-successor of S1 (and it's d-successor)
+    let s1Y = sg.edges[&(s1, Symbol::Nonterminal(grm.nonterminal_off("Y")))];
+    state_exists(&grm, &sg.states[s1Y], "X", 0, 2, vec!["a", "d", "e", "$"]);
+    let s1Yd = sg.edges[&(s1Y, Symbol::Terminal(grm.terminal_off("d")))];
+    state_exists(&grm, &sg.states[s1Yd], "X", 0, 3, vec!["a", "d", "e", "$"]);
+
+    // Z-successor of S1 (and it's successor)
+    let s1Z = sg.edges[&(s1, Symbol::Nonterminal(grm.nonterminal_off("Z")))];
+    state_exists(&grm, &sg.states[s1Z], "X", 1, 2, vec!["a", "d", "e", "$"]);
+    let s1Zc = sg.edges[&(s1Z, Symbol::Terminal(grm.terminal_off("c")))];
+    state_exists(&grm, &sg.states[s1Zc], "X", 1, 3, vec!["a", "d", "e", "$"]);
+
+    // T-successor of S1
+    let s1T = sg.edges[&(s1, Symbol::Nonterminal(grm.nonterminal_off("T")))];
+    state_exists(&grm, &sg.states[s1T], "X", 2, 2, vec!["a", "d", "e", "$"]);
+
+    // Y-successor of S7 (and it's d-successor)
+    let s7Y = sg.edges[&(s7, Symbol::Nonterminal(grm.nonterminal_off("Y")))];
+    state_exists(&grm, &sg.states[s7Y], "X", 3, 2, vec!["a", "d", "e", "$"]);
+    let s7Ye = sg.edges[&(s7Y, Symbol::Terminal(grm.terminal_off("e")))];
+    state_exists(&grm, &sg.states[s7Ye], "X", 3, 3, vec!["a", "d", "e", "$"]);
+
+    // Z-successor of S7 (and it's successor)
+    let s7Z = sg.edges[&(s7, Symbol::Nonterminal(grm.nonterminal_off("Z")))];
+    state_exists(&grm, &sg.states[s7Z], "X", 4, 2, vec!["a", "d", "e", "$"]);
+    let s7Zd = sg.edges[&(s7Z, Symbol::Terminal(grm.terminal_off("d")))];
+    state_exists(&grm, &sg.states[s7Zd], "X", 4, 3, vec!["a", "d", "e", "$"]);
+
+    // T-successor of S7
+    let s7T = sg.edges[&(s7, Symbol::Nonterminal(grm.nonterminal_off("T")))];
+    state_exists(&grm, &sg.states[s7T], "X", 5, 2, vec!["a", "d", "e", "$"]);
+
+    // W-successor of S2 and S8 (merged)
+    let s8W = sg.edges[&(s8, Symbol::Nonterminal(grm.nonterminal_off("W")))];
+    assert_eq!(s8W, sg.edges[&(s2, Symbol::Nonterminal(grm.nonterminal_off("W")))]);
+    state_exists(&grm, &sg.states[s8W], "Y", 0, 2, vec!["d", "e"]);
+
+    // V-successor of S3 and S9 (merged)
+    let s9V = sg.edges[&(s9, Symbol::Nonterminal(grm.nonterminal_off("V")))];
+    assert_eq!(s9V, sg.edges[&(s3, Symbol::Nonterminal(grm.nonterminal_off("V")))]);
+    state_exists(&grm, &sg.states[s9V], "W", 0, 2, vec!["d", "e"]);
+}
