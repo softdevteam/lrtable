@@ -320,15 +320,15 @@ impl Itemset {
             let item_opt = item_rc.borrow();
             if item_opt.is_none() { continue; }
             let item_la = &item_opt.as_ref().unwrap().lookaheads;
-            for k in 0..item_la.len() {
+            for k in 1..item_la.len() {
+                let ik_rc = item_la[k].borrow();
+                if ik_rc.is_none() { continue; }
                 for (j, other_rc) in other.items.iter().enumerate().skip(i) {
                     let other_opt = other_rc.borrow();
                     if other_opt.is_none() { continue; }
                     let other_la = &other_opt.as_ref().unwrap().lookaheads;
-                    for l in 0..other_la.len() {
-                        let ik_rc = item_la[k].borrow();
+                    for l in 1..other_la.len() {
                         let ol_rc = other_la[l].borrow();
-                        if ik_rc.is_none() { continue; }
                         if ol_rc.is_none() { continue; }
 
 
