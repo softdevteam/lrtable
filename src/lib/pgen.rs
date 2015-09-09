@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::cell::RefCell;
 
 extern crate bit_vec;
@@ -298,6 +298,99 @@ impl Itemset {
         }
         newis
     }
+
+    pub fn weakly_compatible(&self, other: &Itemset) -> bool {
+        // test if states have the same items
+        for (i, item_rc) in self.items.iter().enumerate() {
+            let item_opt = item_rc.borrow();
+            let other_opt = other.items[i].borrow();
+            if item_opt.is_none() && other_opt.is_none() { continue; }
+            if item_opt.is_none() != other_opt.is_none() { return false; }
+            let item_la = &item_opt.as_ref().unwrap().lookaheads;
+            let other_la = &other_opt.as_ref().unwrap().lookaheads;
+            for k in 0..item_la.len() {
+                if item_la[k].borrow().is_none() != other_la[k].borrow().is_none() {
+                    return false;
+                }
+            }
+        }
+
+        // weakly test
+        for (i, item_rc) in self.items.iter().enumerate() {
+            let item_opt = item_rc.borrow();
+            if item_opt.is_none() { continue; }
+            let item_la = &item_opt.as_ref().unwrap().lookaheads;
+            for k in 1..item_la.len() {
+                let ik_rc = item_la[k].borrow();
+                if ik_rc.is_none() { continue; }
+                for (j, other_rc) in other.items.iter().enumerate().skip(i) {
+                    let other_opt = other_rc.borrow();
+                    if other_opt.is_none() { continue; }
+                    let other_la = &other_opt.as_ref().unwrap().lookaheads;
+                    for l in 1..other_la.len() {
+                        let ol_rc = other_la[l].borrow();
+                        if ol_rc.is_none() { continue; }
+
+
+                        let ik = ik_rc.as_ref().unwrap();
+                        let ol = ol_rc.as_ref().unwrap();
+                        // get ok
+                        let ok_item_rc = &other.items[i];
+                        let ok_item_opt = ok_item_rc.borrow();
+                        let ok_item_la = &ok_item_opt.as_ref().unwrap().lookaheads;
+                        let ok_ok_rc = ok_item_la[k].borrow();
+                        let ok = ok_ok_rc.as_ref().unwrap();
+                        // get il
+                        let il_item_rc = &self.items[j];
+                        let il_item_opt = il_item_rc.borrow();
+                        let il_item_la = &il_item_opt.as_ref().unwrap().lookaheads;
+                        let il_il_rc = il_item_la[l].borrow();
+                        let il = il_il_rc.as_ref().unwrap();
+                        let mut any = false;
+                        if !bitvec_intersect(ik, ol) && !bitvec_intersect(il, ok) {
+                            any = true;
+                        }
+                        if bitvec_intersect(ik, il) { any = true; }
+                        if bitvec_intersect(ok, ol) { any = true; }
+                        if !any {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    pub fn merge_lookaheads(&self, other: &Itemset) -> bool {
+        let mut changed = false;
+        for (i, item_rc) in self.items.iter().enumerate() {
+            let item_opt = item_rc.borrow();
+            let other_opt = other.items[i].borrow();
+            if item_opt.is_none() && other_opt.is_none() { continue; }
+            assert_eq!(item_opt.is_none(), other_opt.is_none());
+            let item_la = &item_opt.as_ref().unwrap().lookaheads;
+            let other_la = &other_opt.as_ref().unwrap().lookaheads;
+            for k in 0..item_la.len() {
+                let mut ik = item_la[k].borrow_mut();
+                if ik.is_none() {
+                    continue;
+                }
+                let ok = other_la[k].borrow();
+                if ik.as_mut().unwrap().union(&ok.as_ref().unwrap()) {
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+}
+
+pub fn bitvec_intersect(vec: &BitVec, other: &BitVec) -> bool {
+    for (i, bit) in vec.iter().enumerate() {
+        if bit && other[i] { return true; }
+    }
+    false
 }
 
 pub struct StateGraph {
@@ -322,8 +415,13 @@ impl StateGraph {
 
         let mut seen_nonterms = BitVec::from_elem(grm.nonterms_len, false);
         let mut seen_terms = BitVec::from_elem(grm.terms_len, false);
-        let mut state_i = 0; // How far through states have we processed so far?
-        while state_i < states.len() {
+
+        let mut todo = HashSet::new();
+        todo.insert(0);
+        while !todo.is_empty() {
+            let mut state_i = 0;
+            for x in &todo { state_i = x.clone(); break; }
+            todo.remove(&state_i);
             // We maintain two lists of which nonterms and terms we've seen; when processing a
             // given state there's no point processing any given nonterm or term more than once.
             seen_nonterms.clear();
@@ -363,17 +461,22 @@ impl StateGraph {
                         }
                         nstate = state.goto(&grm, &firsts, sym.clone());
                     }
-                    let j = states.iter().position(|x| x == &nstate);
+                    let j = states.iter().position(|x| x.weakly_compatible(&nstate));
                     match j {
-                        Some(k) => { edges.insert((state_i, sym.clone()), k); },
+                        Some(k) => {
+                            edges.insert((state_i, sym.clone()), k);
+                            if states[k].merge_lookaheads(&nstate) {
+                                todo.insert(k);
+                            }
+                        },
                         None    => {
                             edges.insert((state_i, sym.clone()), states.len());
                             states.push(nstate);
+                            todo.insert(states.len()-1);
                         }
                     }
                 }
             }
-            state_i += 1;
         }
         StateGraph{states: states, edges: edges}
     }
