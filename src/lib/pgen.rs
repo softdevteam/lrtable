@@ -319,33 +319,47 @@ impl Itemset {
         for (i, item_rc) in self.items.iter().enumerate() {
             let item_opt = item_rc.borrow();
             if item_opt.is_none() { continue; }
-            for other_rc in self.items.iter().skip(i) {
-                let other_opt = other_rc.borrow();
-                if other_opt.is_none() { continue; }
-                let item_la = &item_opt.as_ref().unwrap().lookaheads;
-                let other_la = &other_opt.as_ref().unwrap().lookaheads;
-                for k in 0..item_la.len() {
-                    let ik_rc = item_la[k].borrow();
-                    let ok_rc = other_la[k].borrow();
-                    if ik_rc.is_none() { continue; }
-                    let ik = ik_rc.as_ref().unwrap();
-                    let ok = ok_rc.as_ref().unwrap();
-                    for l in k..other_la.len() {
-                        let il_rc = item_la[l].borrow();
+            let item_la = &item_opt.as_ref().unwrap().lookaheads;
+            for k in 0..item_la.len() {
+                for (j, other_rc) in other.items.iter().enumerate().skip(i) {
+                    let other_opt = other_rc.borrow();
+                    if other_opt.is_none() { continue; }
+                    let other_la = &other_opt.as_ref().unwrap().lookaheads;
+                    for l in 0..other_la.len() {
+                        let ik_rc = item_la[k].borrow();
                         let ol_rc = other_la[l].borrow();
-                        if il_rc.is_none() { continue; }
+                        if ik_rc.is_none() { continue; }
+                        if ol_rc.is_none() { continue; }
+
+
+                        let ik = ik_rc.as_ref().unwrap();
                         let ol = ol_rc.as_ref().unwrap();
-                        let il = il_rc.as_ref().unwrap();
+                        // get ok
+                        let ok_item_rc = &other.items[i];
+                        let ok_item_opt = ok_item_rc.borrow();
+                        let ok_item_la = &ok_item_opt.as_ref().unwrap().lookaheads;
+                        let ok_ok_rc = ok_item_la[k].borrow();
+                        let ok = ok_ok_rc.as_ref().unwrap();
+                        // get il
+                        let il_item_rc = &self.items[j];
+                        let il_item_opt = il_item_rc.borrow();
+                        let il_item_la = &il_item_opt.as_ref().unwrap().lookaheads;
+                        let il_il_rc = il_item_la[l].borrow();
+                        let il = il_il_rc.as_ref().unwrap();
+                        let mut any = false;
                         if !bitvec_intersect(ik, ol) && !bitvec_intersect(il, ok) {
-                            return true;
+                            any = true;
                         }
-                        if bitvec_intersect(ik, il) { return true; }
-                        if bitvec_intersect(ok, ol) { return true; }
+                        if bitvec_intersect(ik, il) { any = true; }
+                        if bitvec_intersect(ok, ol) { any = true; }
+                        if !any {
+                            return false;
+                        }
                     }
                 }
             }
         }
-        false
+        true
     }
 
     pub fn merge_lookaheads(&self, other: &Itemset) -> bool {
